@@ -19,6 +19,7 @@ async def start_handler(message: Message, user_repository):
     await message.answer(
         "Привет 👋\n\n"
         "Это твой личный бот для задач и напоминаний.\n"
+        "Теперь сюда можно назначать задачи и другим людям.\n\n"
         "Выбери нужный раздел:",
         reply_markup=main_keyboard(),
     )

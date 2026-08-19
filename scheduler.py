@@ -69,9 +69,9 @@ class BotScheduler:
         for task in tasks:
             try:
                 await self.bot.send_message(
-                    task.user_id,
+                    task.assignee_user_id or task.user_id,
                     "🔔 <b>Напоминание</b>\n\n"
-                    + format_task(task, self.config.timezone),
+                    + format_task(task, self.config.timezone, task.assignee_user_id or task.user_id),
                     reply_markup=reminder_actions_keyboard(task.id),
                 )
                 self.reminder_repository.mark_sent(task.id)

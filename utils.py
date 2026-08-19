@@ -70,8 +70,21 @@ def format_date_only(value: str | None, timezone: str) -> str:
     return dt.astimezone(ZoneInfo(timezone)).strftime("%d.%m.%Y")
 
 
-def format_task(task, timezone: str) -> str:
-    client = f"\n👤 {task.client_name}" if task.client_name else ""
+def format_task(task, timezone: str, viewer_user_id: int | None = None) -> str:
+    client = f"\n👤 Клиент: {task.client_name}" if task.client_name else ""
+    assignment = ""
+
+    if task.assignee_user_id and task.assignee_user_id != task.user_id:
+        if viewer_user_id == task.user_id:
+            assignment = f"\n➡️ Исполнитель: {task.assignee_name}"
+        elif viewer_user_id == task.assignee_user_id:
+            assignment = f"\n⬅️ Постановщик: {task.creator_name}"
+        else:
+            assignment = (
+                f"\n⬅️ Постановщик: {task.creator_name}"
+                f"\n➡️ Исполнитель: {task.assignee_name}"
+            )
+
     priority_icons = {
         "low": "🟢",
         "normal": "🟡",
@@ -82,6 +95,7 @@ def format_task(task, timezone: str) -> str:
     return (
         f"📌 <b>Задача #{task.id}</b>\n"
         f"{priority} {task.title}"
+        f"{assignment}"
         f"{client}\n"
         f"📅 {format_datetime(task.due_at, timezone)}"
     )

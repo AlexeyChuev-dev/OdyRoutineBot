@@ -11,6 +11,11 @@ def get_connection(database_path: str) -> sqlite3.Connection:
     return connection
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row["name"] == column for row in rows)
+
+
 def init_db(database_path: str) -> None:
     conn = get_connection(database_path)
 
@@ -44,6 +49,7 @@ def init_db(database_path: str) -> None:
         CREATE TABLE IF NOT EXISTS tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            assignee_user_id INTEGER,
             client_id INTEGER,
             title TEXT NOT NULL,
             description TEXT,
@@ -56,17 +62,21 @@ def init_db(database_path: str) -> None:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             completed_at TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (assignee_user_id) REFERENCES users(id) ON DELETE SET NULL,
             FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_tasks_user_status
-        ON tasks(user_id, status);
-
-        CREATE INDEX IF NOT EXISTS idx_tasks_due_at
-        ON tasks(due_at);
-
-        CREATE INDEX IF NOT EXISTS idx_tasks_remind_at
-        ON tasks(remind_at);
+        CREATE TABLE IF NOT EXISTS task_people (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_user_id INTEGER NOT NULL,
+            target_user_id INTEGER NOT NULL,
+            alias TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(owner_user_id, target_user_id),
+            UNIQUE(owner_user_id, alias),
+            FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
 
         CREATE TABLE IF NOT EXISTS recurring_tasks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,6 +93,28 @@ def init_db(database_path: str) -> None:
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
         );
+    """)
+
+    # Миграция для баз, созданных старой версией бота.
+    if not _column_exists(conn, "tasks", "assignee_user_id"):
+        conn.execute("ALTER TABLE tasks ADD COLUMN assignee_user_id INTEGER")
+
+    conn.execute(
+        "UPDATE tasks SET assignee_user_id = user_id WHERE assignee_user_id IS NULL"
+    )
+
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_tasks_user_status
+        ON tasks(user_id, status);
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_assignee_status
+        ON tasks(assignee_user_id, status);
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_due_at
+        ON tasks(due_at);
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_remind_at
+        ON tasks(remind_at);
 
         CREATE INDEX IF NOT EXISTS idx_recurring_next_run
         ON recurring_tasks(next_run_at, is_active);

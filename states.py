@@ -20,6 +20,11 @@ class NewClient(StatesGroup):
     notes = State()
 
 
+class NewPerson(StatesGroup):
+    username = State()
+    alias = State()
+
+
 class NewRecurringTask(StatesGroup):
     title = State()
     recurrence = State()

@@ -10,6 +10,7 @@ from config import load_config
 from database import init_db
 from handlers import get_routers
 from repositories.client_repository import ClientRepository
+from repositories.person_repository import PersonRepository
 from repositories.recurring_repository import RecurringRepository
 from repositories.reminder_repository import ReminderRepository
 from repositories.task_repository import TaskRepository
@@ -36,6 +37,7 @@ async def main():
 
     task_repository = TaskRepository(config.database_path)
     client_repository = ClientRepository(config.database_path)
+    person_repository = PersonRepository(config.database_path)
     recurring_repository = RecurringRepository(config.database_path)
     user_repository = UserRepository(config.database_path)
     reminder_repository = ReminderRepository(task_repository)
@@ -66,6 +68,7 @@ async def main():
             config=config,
             task_repository=task_repository,
             client_repository=client_repository,
+            person_repository=person_repository,
             recurring_repository=recurring_repository,
             user_repository=user_repository,
             reminder_repository=reminder_repository,

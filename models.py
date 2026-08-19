@@ -14,6 +14,9 @@ class Task:
     remind_at: Optional[str]
     client_id: Optional[int] = None
     client_name: Optional[str] = None
+    assignee_user_id: Optional[int] = None
+    assignee_name: Optional[str] = None
+    creator_name: Optional[str] = None
 
 
 @dataclass
@@ -22,6 +25,16 @@ class Client:
     user_id: int
     name: str
     notes: Optional[str]
+
+
+@dataclass
+class Person:
+    id: int
+    owner_user_id: int
+    target_user_id: int
+    alias: str
+    username: Optional[str]
+    first_name: Optional[str]
 
 
 @dataclass

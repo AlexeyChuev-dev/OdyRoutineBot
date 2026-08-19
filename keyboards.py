@@ -18,6 +18,10 @@ def main_keyboard():
                 KeyboardButton(text="🔴 Просрочено"),
             ],
             [
+                KeyboardButton(text="👤 Люди"),
+                KeyboardButton(text="📤 Я поставил"),
+            ],
+            [
                 KeyboardButton(text="👥 Клиенты"),
                 KeyboardButton(text="🔁 Регулярные"),
             ],
@@ -197,6 +201,40 @@ def task_client_keyboard(clients):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def people_keyboard(people):
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{person.alias} (@{person.username})" if person.username else person.alias,
+                callback_data=f"person:view:{person.id}",
+            )
+        ]
+        for person in people
+    ]
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить человека",
+                callback_data="person:add",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def person_actions_keyboard(person_id: int):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🗑 Удалить",
+                    callback_data=f"person:delete:{person_id}",
+                )
+            ]
+        ]
+    )
+
+
 def recurrence_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -204,9 +242,7 @@ def recurrence_keyboard():
                 KeyboardButton(text="Каждый день"),
                 KeyboardButton(text="По будням"),
             ],
-            [
-                KeyboardButton(text="Раз в неделю"),
-            ],
+            [KeyboardButton(text="Раз в неделю")],
             [KeyboardButton(text="❌ Отмена")],
         ],
         resize_keyboard=True,

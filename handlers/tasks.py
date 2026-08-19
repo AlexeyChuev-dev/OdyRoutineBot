@@ -1,6 +1,8 @@
+import re
 from datetime import datetime
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -18,6 +20,10 @@ from utils import combine_due, format_task, parse_date, parse_time
 
 
 router = Router(name=__name__)
+FAST_TASK_RE = re.compile(
+    r"^(?:таска|задача)\s+(?P<person>\S+)\s+(?P<title>.+)$",
+    re.IGNORECASE,
+)
 
 
 async def send_task_list(message, tasks, timezone, empty_text):
@@ -32,14 +38,51 @@ async def send_task_list(message, tasks, timezone, empty_text):
 
     for task in tasks:
         await message.answer(
-            format_task(task, timezone),
+            format_task(task, timezone, message.from_user.id),
             reply_markup=task_actions_keyboard(task.id),
         )
+
+
+@router.message(StateFilter(None), F.text.regexp(FAST_TASK_RE))
+async def fast_assigned_task(
+    message: Message,
+    state: FSMContext,
+    person_repository,
+):
+    match = FAST_TASK_RE.match(message.text or "")
+    if not match:
+        return
+
+    person_token = match.group("person")
+    title = match.group("title").strip()
+    person = person_repository.resolve(message.from_user.id, person_token)
+
+    if not person:
+        await message.answer(
+            f"Не понял, кто такой «{person_token}».\n\n"
+            "Сначала добавь человека через <b>👤 Люди</b>."
+        )
+        return
+
+    await state.clear()
+    await state.update_data(
+        title=title,
+        assignee_user_id=person.target_user_id,
+        assignee_alias=person.alias,
+    )
+    await state.set_state(NewTask.date)
+    await message.answer(
+        f"➡️ Задача для <b>{person.alias}</b>\n"
+        f"📝 {title}\n\n"
+        "Когда выполнить?",
+        reply_markup=date_keyboard(),
+    )
 
 
 @router.message(F.text == "➕ Новая задача")
 async def new_task(message: Message, state: FSMContext):
     await state.clear()
+    await state.update_data(assignee_user_id=message.from_user.id)
     await state.set_state(NewTask.title)
     await message.answer(
         "Напиши название задачи:",
@@ -137,15 +180,18 @@ async def new_task_reminder(
     task_repository,
     reminder_service,
     config,
+    bot: Bot,
 ):
     data = await state.get_data()
     remind_at = reminder_service.calculate_reminder(
         data.get("due_at"),
         message.text,
     )
+    assignee_user_id = data.get("assignee_user_id") or message.from_user.id
 
     task_id = task_repository.create(
         user_id=message.from_user.id,
+        assignee_user_id=assignee_user_id,
         title=data["title"],
         due_at=data.get("due_at"),
         remind_at=remind_at,
@@ -155,9 +201,27 @@ async def new_task_reminder(
     task = task_repository.get(task_id, message.from_user.id)
     await state.clear()
 
-    await message.answer("✅ Задача создана", reply_markup=main_keyboard())
+    if assignee_user_id == message.from_user.id:
+        await message.answer("✅ Задача создана", reply_markup=main_keyboard())
+    else:
+        await message.answer(
+            f"✅ Задача отправлена: <b>{task.assignee_name}</b>",
+            reply_markup=main_keyboard(),
+        )
+        try:
+            await bot.send_message(
+                assignee_user_id,
+                "📥 <b>Тебе назначили новую задачу</b>\n\n"
+                + format_task(task, config.timezone, assignee_user_id),
+                reply_markup=task_actions_keyboard(task.id),
+            )
+        except Exception:
+            await message.answer(
+                "⚠️ Задача сохранена, но Telegram не дал отправить уведомление исполнителю."
+            )
+
     await message.answer(
-        format_task(task, config.timezone),
+        format_task(task, config.timezone, message.from_user.id),
         reply_markup=task_actions_keyboard(task.id),
     )
 
@@ -184,10 +248,23 @@ async def all_tasks(message: Message, task_service, config):
     )
 
 
+@router.message(F.text == "📤 Я поставил")
+async def created_tasks(message: Message, task_repository, config):
+    tasks = task_repository.list_created(message.from_user.id)
+    await send_task_list(
+        message,
+        tasks,
+        config.timezone,
+        "📤 Активных задач, назначенных другим, нет.",
+    )
+
+
 @router.callback_query(F.data.startswith("task:complete:"))
-async def complete_task(callback: CallbackQuery, task_repository):
+async def complete_task(callback: CallbackQuery, task_repository, bot: Bot):
     task_id = int(callback.data.rsplit(":", 1)[1])
-    if not task_repository.complete(task_id, callback.from_user.id):
+    task = task_repository.get(task_id, callback.from_user.id)
+
+    if not task or not task_repository.complete(task_id, callback.from_user.id):
         await callback.answer("Задача уже закрыта или не найдена.")
         return
 
@@ -195,6 +272,19 @@ async def complete_task(callback: CallbackQuery, task_repository):
         callback.message.html_text + "\n\n✅ <b>Выполнено</b>"
     )
     await callback.answer("Готово")
+
+    if (
+        callback.from_user.id == task.assignee_user_id
+        and task.user_id != task.assignee_user_id
+    ):
+        try:
+            await bot.send_message(
+                task.user_id,
+                f"✅ <b>{task.assignee_name}</b> выполнил задачу #{task.id}\n"
+                f"{task.title}",
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("task:delete:"))
@@ -224,7 +314,7 @@ async def tomorrow_task(callback: CallbackQuery, task_repository, task_service, 
     task = task_repository.get(task_id, callback.from_user.id)
 
     await callback.message.edit_text(
-        format_task(task, config.timezone),
+        format_task(task, config.timezone, callback.from_user.id),
         reply_markup=task_actions_keyboard(task.id),
     )
     await callback.answer("Перенесено на завтра")
@@ -290,6 +380,6 @@ async def move_task_time(
     await message.answer("✅ Задача перенесена", reply_markup=main_keyboard())
     if task:
         await message.answer(
-            format_task(task, config.timezone),
+            format_task(task, config.timezone, message.from_user.id),
             reply_markup=task_actions_keyboard(task.id),
         )

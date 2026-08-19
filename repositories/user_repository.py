@@ -23,23 +23,39 @@ class UserRepository:
             (user_id, username, first_name),
         )
         conn.execute(
-            """
-            INSERT OR IGNORE INTO settings (user_id)
-            VALUES (?)
-            """,
+            "INSERT OR IGNORE INTO settings (user_id) VALUES (?)",
             (user_id,),
         )
         conn.commit()
         conn.close()
 
-    def get_settings(self, user_id: int):
+    def find_by_username(self, username: str):
+        username = username.strip().lstrip("@").lower()
         conn = get_connection(self.database_path)
         row = conn.execute(
             """
-            SELECT *
-            FROM settings
-            WHERE user_id = ?
+            SELECT id, username, first_name
+            FROM users
+            WHERE LOWER(username) = ?
             """,
+            (username,),
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get(self, user_id: int):
+        conn = get_connection(self.database_path)
+        row = conn.execute(
+            "SELECT id, username, first_name FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_settings(self, user_id: int):
+        conn = get_connection(self.database_path)
+        row = conn.execute(
+            "SELECT * FROM settings WHERE user_id = ?",
             (user_id,),
         ).fetchone()
 
